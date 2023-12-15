@@ -3,7 +3,7 @@
 # Date  : 2023/12/13
 # Update:  
 # License: MIT (see LICENSE.md)
-# [USAGE] : ruby conv_wprof.rb input_fname
+# [USAGE] : ruby wprof.rb input_fname
 # [NOTE] : the output file name is named from information in the original file. 
 # [Reference1]: https://www.data.jma.go.jp/add/suishin/jyouhou/pdf/97.pdf
 # [Reference2]: https://www.nco.ncep.noaa.gov/sib/jeff/bufrtab_tableb.html
