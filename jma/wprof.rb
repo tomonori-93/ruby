@@ -125,7 +125,7 @@ def conv_octs_toi( inv, str_num, length )
 end
 
 if ARGV.size != 1 then
-   puts '[USAGE] : ruby conv_wprof.rb input_filename'
+   puts '[USAGE] : ruby wprof.rb input_filename'
    exit
 end
 
