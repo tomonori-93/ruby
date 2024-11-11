@@ -1,7 +1,7 @@
 #!/usr/bin/ruby
 # Author: Satoki Tsujino (satoki@gfd-dennou.org)
 # Date  : 2023/12/13
-# Update:  
+# Update: 2024/11/11 support for BUFR3
 # License: MIT (see LICENSE file)
 # [USAGE] : ruby wprof.rb input_fname
 # [NOTE] : the output file name is named from information in the original file. 
@@ -139,8 +139,10 @@ m = f.read(fsize)
 
 sec_head = ["A18"]
 sec0 = ["A4", "C3", "C"]
-clist = sec_head.join + sec0.join  # sec0 の各配列要素文字列を結合
-iupcnum = m.unpack(clist)[0][4..5]
+sec0_index_top = 1
+clist = sec_head.join + sec0.join  # sec0 の各配列要素文字列を結合 [0..5]
+#iupcnum = m.unpack(clist)[0][4..5]
+bufr_version = m.unpack(clist)[5]
 #puts clist, m.unpack(clist)[0..1]
 #puts conv_oct_tobyte( m.unpack(clist)[2..4] )  # sec0[2] == "C3" = "CCC"
 #puts m.unpack(clist)[5]
@@ -149,8 +151,13 @@ puts "File Format = #{m.unpack(clist)[1]}#{m.unpack(clist)[5]}"
 puts "File length = #{conv_oct_tobyte( m.unpack(clist)[2..4] )}"
 tot_length = m.unpack(clist)[0..1]  # ファイルの長さ (ヘッダ 18 bytes 除く)
 
-sec1 = ["C3", "C", "C2", "C2", "C", "C", "C", "C", "C", "C", "C", "C2", "C", "C", "C", "C", "C"]
-clist = clist + sec1.join
+if bufr_version == 4 then  # BUFR4
+   sec1 = ["C3", "C", "C2", "C2", "C", "C", "C", "C", "C", "C", "C", "C2", "C", "C", "C", "C", "C"]  # [6..27]
+   sec1_index_top = 6
+elsif bufr_version == 3 then  # BUFR3
+   sec1 = ["C3", "C", "C", "C", "C", "C", "C", "C", "C", "C", "C", "C", "C", "C", "C", "C"]  # [6..23]
+   sec1_index_top = 6
+end
 #puts conv_oct_tobyte( m.unpack(clist)[6..8] )  # sec1[0] == "C3" = "CCC"
 #puts m.unpack(clist)[9]
 #puts conv_oct_tobyte( m.unpack(clist)[10..11] )  # sec1[2] == "C2" = "CC"
@@ -158,9 +165,16 @@ clist = clist + sec1.join
 #puts m.unpack(clist)[14..20]
 #puts conv_oct_tobyte( m.unpack(clist)[21..22] )  # sec1[12] == "C2" = "CC"
 #puts m.unpack(clist)[23..27]
-sec1_length = conv_oct_tobyte( m.unpack(clist)[6..8] )
+clist = clist + sec1.join
+sec1_length = conv_oct_tobyte( m.unpack(clist)[sec1_index_top..sec1_index_top+2] )  # [6..8]
 
-sec3 = ["C3", "C", "C2", "C", "C48"]  # "C48" == "C2" * 24
+if bufr_version == 4 then  # BUFR4
+   sec3 = ["C3", "C", "C2", "C", "C48"]  # "C48" == "C2" * 24 [28..82]
+   sec3_index_top = 28
+elsif bufr_version == 3 then  # BUFR3
+   sec3 = ["C3", "C", "C2", "C", "C48", "C"]  # "C48" == "C2" * 24 [24..79]
+   sec3_index_top = 24
+end
 clist = clist + sec3.join
 #puts conv_oct_tobyte( m.unpack(clist)[28..30] )  # sec3[0] == "C3" = "CCC"
 #puts m.unpack(clist)[31]
@@ -169,18 +183,28 @@ clist = clist + sec3.join
 #for i in 0..23
 #   puts conv_2oct_to268( m.unpack(clist)[35+i*2..35+i*2+1] )
 #end
-sec3_length = conv_oct_tobyte( m.unpack(clist)[28..30] )
+sec3_length = conv_oct_tobyte( m.unpack(clist)[sec3_index_top..sec3_index_top+2] )
+#-- このデータに含まれる観測局の数
+loc_num = conv_oct_tobyte( m.unpack(clist)[sec3_index_top+4..sec3_index_top+5])
 
-sec4h = ["C3", "C"]
+sec4h = ["C3", "C"]  # BUFR4 [83..86] / BUFR3 [80..83]
+
+if bufr_version == 4 then  # BUFR4
+   sec4h_index_top = 83
+   sec4_index_top = 87
+elsif bufr_version == 3 then  # BUFR3
+   sec4h_index_top = 80
+   sec4_index_top = 84
+end
 clist = clist + sec4h.join
 #puts conv_oct_tobyte( m.unpack(clist)[83..85] )
-sec4_length = conv_oct_tobyte( m.unpack(clist)[83..85] )
+sec4_length = conv_oct_tobyte( m.unpack(clist)[sec4h_index_top..sec4h_index_top+2] )
 sec4 = ["C#{sec4_length.to_i-4}"]  # 残りを一括で 1 byte 整数として読み込む
                                    # -4 は sec4h で読み込んだ 4 byte
 sec5 = ["A4"]
 clist = clist + sec4.join + sec5.join
 
-#-- Parameters for BUFR4 format
+#-- Parameters for BUFR4/3 format
               # WMO block, WMO loc, lat, lon, obs height, 6, x_itr
 length_head = [7, 10, 15, 16, 15, 4, 8]
 scale_head  = [1, 1, 0.01, 0.01, 1.0, 1.0, 1, 1]
@@ -197,8 +221,12 @@ length_y = [15, 8, 13, 13, 13, 8]
 scale_y  = [1.0, 1, 0.1, 0.1, 0.01, 1.0]
 reference_y = [0, 0, -4096, -4096, -4096, -32]
 
-#-- Parameters for wind profiler data (location number)
-iupc_ii = {"41"=>3, "42"=>4, "43"=>3, "44"=>3, "45"=>3, "46"=>4, "47"=>3, "48"=>4, "49"=>3, "50"=>3}
+##-- Parameters for wind profiler data (location number)
+#if bufr_version == 4 then  # BUFR4
+#   iupc_ii = {"41"=>3, "42"=>4, "43"=>3, "44"=>3, "45"=>3, "46"=>4, "47"=>3, "48"=>4, "49"=>3, "50"=>3}  # 仙台・若松が 42 番に追加
+#elsif bufr_version == 3 then  # BUFR3
+#   iupc_ii = {"41"=>3, "42"=>2, "43"=>3, "44"=>3, "45"=>3, "46"=>4, "47"=>3, "48"=>4, "49"=>3, "50"=>3}
+#end
 
 head_val = Array.new(length_head.size)
 
@@ -207,11 +235,12 @@ str_clist = 0
 cnt_length = 0
 end_clist = 0
 
-for k in 1..iupc_ii[iupcnum]
+for k in 1..loc_num
+#for k in 1..iupc_ii[iupcnum]
    #-- WMO block
    if k == 1 then
       cnt_str_num = 0
-      str_clist = 87
+      str_clist = sec4_index_top  # BUFR4 [87] / BUFR3 [84]
    else
       cnt_str_num = (cnt_str_num + cnt_length) % 8
       str_clist = end_clist
@@ -221,6 +250,7 @@ for k in 1..iupc_ii[iupcnum]
    if (cnt_length + cnt_str_num) % 8 == 0 then
       end_clist = end_clist - 1
    end
+#print "#{cnt_str_num}, #{cnt_length} \n"
    wmo_block = conv_octs_toi( m.unpack(clist)[str_clist..end_clist], str_num=cnt_str_num, length=cnt_length )
    if (cnt_length + cnt_str_num) % 8 == 0 then
       end_clist = end_clist + 1
@@ -267,7 +297,7 @@ for k in 1..iupc_ii[iupcnum]
 
       ctime = x_val[0+length_x.size*ix].to_s.rjust(4,"0") + x_val[1+length_x.size*ix].to_s.rjust(2,"0") + x_val[2+length_x.size*ix].to_s.rjust(2,"0") + x_val[3+length_x.size*ix].to_s.rjust(2,"0") + x_val[4+length_x.size*ix].to_s.rjust(2,"0")
       cout = "OBS point (lon, lat, height): #{head_val[3]}, #{head_val[2]}, #{head_val[4]}\n"
-      cout = cout + "OBS time (yyyymmddhhnn): #{ctime}\n"
+      cout = cout + "OBS time (yyyymmddhhnn): #{ctime}\n"  # UTC
       cout = cout + "Height, U-wind, V-wind, W-wind\n"
       cout = cout + "m,      ms-1,   ms-1,   ms-1  \n"
     
@@ -315,4 +345,4 @@ for k in 1..iupc_ii[iupcnum]
    end
 end
 
-puts "check fin #{end_clist} #{m.unpack(clist).size}"
+#puts "check fin #{end_clist} #{m.unpack(clist).size}"
